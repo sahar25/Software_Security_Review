@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Software Security Review: DAST, DevSecOps, and Code Analysis</title>
+<style>
+:root{
+  --bg:#F4F7FA; --surface:#FFFFFF; --ink:#1F2937; --muted:#5B6472; --line:#D5DEE6;
+  --navy:#0B2545; --blue:#134074; --cyan:#0096C7; --gold:#E0A800; --gold-soft:#FDF6E0;
+  --good:#1B998B; --good-soft:#E6F5F3; --bad:#C1121F; --bad-soft:#FBEAEA;
+  --code-bg:#111827; --code-ink:#A7F3D0;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme: dark;
+    --bg:#08172B; --surface:#0F2340; --ink:#E5ECF3; --muted:#9FB3C8; --line:#24406A;
+    --navy:#CFE3EE; --blue:#7FB8E0; --cyan:#4CC3EB; --gold:#F2C744; --gold-soft:#2A2610;
+    --good:#3CC9B8; --good-soft:#0E2E2C; --bad:#F06B74; --bad-soft:#341418;
+    --code-bg:#050C17; --code-ink:#A7F3D0;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+  font-family:Calibri,"Segoe UI",Carlito,Arial,sans-serif;font-size:17px;line-height:1.5}
+.wrap{max-width:820px;margin:0 auto;padding:28px 20px 48px}
+header{background:#0B2545;color:#fff;border-radius:14px;padding:26px 28px}
+header h1{font-family:Cambria,Georgia,"Times New Roman",serif;font-size:1.75rem;line-height:1.2;margin:0 0 6px}
+header p{margin:0;color:#CFE3EE}
+.meter{margin-top:18px;display:flex;align-items:center;gap:14px}
+.track{flex:1;height:10px;background:#134074;border-radius:6px;overflow:hidden;display:flex}
+.seg-good{background:#1B998B;height:100%;transition:width .25s}
+.seg-bad{background:#C1121F;height:100%;transition:width .25s}
+.count{font-size:.95rem;color:#CFE3EE;white-space:nowrap}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px 26px;margin-top:22px}
+.qnum{color:var(--muted);font-size:.95rem;margin:0 0 6px}
+.topic{display:inline-block;font-size:.85rem;color:var(--blue);border:1px solid var(--line);border-radius:20px;padding:1px 10px;margin-left:8px}
+.prompt{font-size:1.15rem;font-weight:700;color:var(--navy);margin:0 0 14px}
+pre{background:var(--code-bg);color:var(--code-ink);padding:14px 16px;border-radius:10px;overflow-x:auto;
+  font-family:Consolas,"Courier New",monospace;font-size:.92rem;line-height:1.45;margin:0 0 16px;white-space:pre}
+code{font-family:Consolas,"Courier New",monospace;font-size:.95em}
+.opts{display:grid;gap:10px}
+.opt{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;background:var(--bg);color:var(--ink);
+  border:2px solid transparent;border-radius:10px;padding:12px 14px;font:inherit;cursor:pointer}
+.opt:hover:not([disabled]){border-color:var(--cyan)}
+.opt:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.opt .letter{font-weight:700;color:var(--gold);min-width:1.2em}
+.opt[disabled]{cursor:default}
+.opt.right{background:var(--good-soft);border-color:var(--good)}
+.opt.wrong{background:var(--bad-soft);border-color:var(--bad)}
+.feedback{margin-top:16px;border-radius:10px;padding:14px 16px;display:none}
+.feedback.show{display:block}
+.feedback.ok{background:var(--good-soft)}
+.feedback.no{background:var(--bad-soft)}
+.feedback strong{display:block;margin-bottom:4px}
+.nav{display:flex;justify-content:space-between;gap:12px;margin-top:20px}
+.btn{font:inherit;font-weight:700;border-radius:10px;padding:10px 18px;cursor:pointer;border:2px solid var(--navy);
+  background:transparent;color:var(--navy)}
+.btn.primary{background:#0B2545;color:#fff;border-color:#0B2545}
+@media (prefers-color-scheme: dark){.btn.primary{background:#4CC3EB;color:#08172B;border-color:#4CC3EB}}
+.btn:disabled{opacity:.4;cursor:default}
+.btn:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.dots{display:flex;flex-wrap:wrap;gap:6px;margin-top:18px}
+.dot{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--muted);
+  font:inherit;font-size:.8rem;cursor:pointer;padding:0}
+.dot.cur{border:2px solid var(--cyan);color:var(--ink);font-weight:700}
+.dot.g{background:var(--good);color:#fff;border-color:var(--good)}
+.dot.b{background:var(--bad);color:#fff;border-color:var(--bad)}
+.dot:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.result h2{font-family:Cambria,Georgia,serif;color:var(--navy);margin:0 0 8px;font-size:1.5rem}
+.big{font-size:2.6rem;font-weight:700;color:var(--navy);margin:4px 0}
+.missed{margin:14px 0 0;padding-left:20px}
+.missed li{margin-bottom:6px}
+.missed a{color:var(--blue)}
+@media (max-width:560px){ .wrap{padding:16px 12px 36px} .card{padding:18px 16px} header{padding:20px} }
+@media (prefers-reduced-motion: reduce){ .seg-good,.seg-bad{transition:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Software Security Review: DAST, DevSecOps, and Code Analysis</h1>
+    <p>Pick an answer to see right away if it is correct and why. Every question has one best answer.</p>
+    <div class="meter">
+      <div class="track" aria-hidden="true"><div class="seg-good" id="segG" style="width:0"></div><div class="seg-bad" id="segB" style="width:0"></div></div>
+      <div class="count" id="count">0 answered</div>
+    </div>
+  </header>
+
+  <main id="app"></main>
+</div>
+
+<script>
+const Q = [
+// ---------- DAST ----------
+{t:"DAST", p:"A team says: \"We ran DAST on our source code repository last night, and it found nothing.\" What is wrong with this?",
+ o:["DAST needs the newest version of the code, so they should pull the latest commit first",
+    "DAST tests a running application by sending it requests, so it cannot scan a code repository",
+    "DAST only works on compiled languages, so it skipped the Python files",
+    "Nothing is wrong. Finding nothing means the code is secure"],
+ a:1, e:"DAST (Dynamic Application Security Testing) is black-box testing: it attacks a running app from the outside, like a user or attacker would. Scanning source code is what SAST does."},
+
+{t:"DAST", p:"A developer reads a DAST report and asks: \"Which line of code has the bug?\" Why can the DAST tool not answer?",
+ o:["DAST only sees requests and responses, not the source code, so it reports the URL and parameter instead",
+    "DAST hides line numbers so attackers cannot use the report",
+    "DAST does know the line, but only shows it in the paid version",
+    "DAST reports line numbers only for high-severity findings"],
+ a:0, e:"Because DAST has no access to the code, it can say \"the name parameter on /search is injectable,\" but a developer still has to trace that to the code. SAST is the tool that points to exact lines."},
+
+{t:"DAST", p:"Which of these problems is DAST more likely to find than SAST?",
+ o:["A password hardcoded in a configuration file in the repository",
+    "An SQL injection bug inside a function that no page ever calls",
+    "An unused variable that makes the code harder to read",
+    "The live server sends the session cookie without the HttpOnly and Secure flags"],
+ a:3, e:"Cookie flags and security headers are often set by server configuration, not in the app code. DAST sees what the running server actually sends. The hardcoded password and the unreachable function are SAST findings; a scanner cannot reach code no page calls."},
+
+{t:"DAST", p:"A DAST scanner crawled a web app and reported zero issues. Later, an attacker found SQL injection on the account settings page, which is only reachable after logging in. What most likely happened?",
+ o:["The scanner was too old to detect SQL injection",
+    "SQL injection cannot be found by DAST tools",
+    "The scanner was never given login credentials, so it never reached or tested pages behind the login",
+    "The attacker used a zero-day that no tool could have found"],
+ a:2, e:"A scanner can only test what it can reach. Without an authenticated scan, everything behind the login is invisible to it, and \"zero issues\" gives a false sense of safety."},
+
+{t:"DAST", p:"Your manager wants a DAST scan on the live online store during business hours. Which choice is least likely to cause damage?",
+ o:["A passive scan, which only watches normal traffic and does not send attack payloads",
+    "An active scan, because it finishes faster",
+    "An active scan with every attack type turned on, to be thorough",
+    "A brute-force scan of the login page, since it only touches one page"],
+ a:0, e:"Active scans send real attack inputs. On a live site they can create fake orders, fill the database with junk, send emails to customers, or lock accounts. Active scans belong in a test or staging environment."},
+
+{t:"DAST", p:"A DAST tool flags \"possible SQL injection\" because the page took 5 extra seconds to respond after a certain input. What is the best next step?",
+ o:["Ignore it. Timing results are always false positives",
+    "Reproduce it manually and confirm before reporting it as a real vulnerability",
+    "Immediately roll back the last release and mark it critical",
+    "Run the scan again until the warning disappears"],
+ a:1, e:"Scanners produce false positives, and a slow server can look like a time-based injection. A tester confirms the finding first. Ignoring it is just as wrong as panicking: if it is real, it is serious."},
+
+// ---------- DevSecOps ----------
+{t:"DevSecOps", p:"In DevSecOps, what does \"shift left\" mean?",
+ o:["Move all security testing to the end, when the full application exists",
+    "Have the operations team take over security from the developers",
+    "Run security checks only after release so they do not slow developers down",
+    "Find security problems earlier in development, when they are cheaper and easier to fix"],
+ a:3, e:"Picture the development timeline from left (planning, coding) to right (release). Shifting left moves security checks earlier. A bug found while coding costs minutes; the same bug found in production can cost a breach."},
+
+{t:"DevSecOps", p:"In a CI/CD pipeline, where does a DAST scan fit best?",
+ o:["Right when the developer saves the file, before it is committed",
+    "During code review, next to the human reviewer",
+    "After the app is built and deployed to a test or staging environment",
+    "Only once a year, during the annual audit"],
+ a:2, e:"DAST needs a running app, so it goes after deployment to a safe test environment. SAST and secret scanning can run earlier, on every commit or build."},
+
+{t:"DevSecOps", p:"A developer accidentally commits a cloud API key to Git, notices, and deletes it in the very next commit. Is the problem solved?",
+ o:["Yes, the key is gone from the latest version of the code",
+    "No. The key is still in the Git history, so it must be revoked and replaced with a new one",
+    "Yes, as long as the repository is private",
+    "No, but renaming the file that contained the key fixes it"],
+ a:1, e:"Git keeps every old commit. Anyone with access to the repository, now or later, can find the key in the history. The only real fix is to revoke (rotate) the key. Secret scanning in the pipeline catches this before the push."},
+
+{t:"DevSecOps", p:"Your team's own code passes SAST and DAST with no issues. But the app uses an open-source library version that has a known CVE. Which practice is designed to catch this?",
+ o:["Software Composition Analysis (SCA), which checks third-party libraries against known vulnerabilities",
+    "A passive DAST scan",
+    "A stricter code review of the team's own files",
+    "Penetration testing once the app is in production"],
+ a:0, e:"Most modern apps are mostly other people's code. SCA (dependency scanning) compares the libraries and versions you use against vulnerability databases, like the CVE lookups we did earlier in the course."},
+
+{t:"DevSecOps", p:"A team set its pipeline to fail the build on any security finding, even low ones. Within a month, developers started turning the scanner off to get releases out. What is the better setup?",
+ o:["Keep failing on everything; developers need to learn",
+    "Remove the scanner from the pipeline and run it by hand instead",
+    "Only scan once before major releases",
+    "Fail the build on high and critical findings, and track lower ones as tickets to fix later"],
+ a:3, e:"This is a quality gate. If it blocks on everything, people work around it and you lose all protection. Blocking the serious issues and tracking the rest keeps security in the pipeline without stopping all work."},
+
+{t:"DevSecOps", p:"Which statement best describes who is responsible for security in a DevSecOps team?",
+ o:["The security team, but they now review code earlier",
+    "Developers, operations, and security share responsibility throughout the whole process",
+    "Operations, since they run the servers in production",
+    "Whoever wrote the code that had the vulnerability"],
+ a:1, e:"DevSecOps is as much culture as tools. Security is built in and shared by everyone, not handed to one team at one gate. Option A is the tempting one, but it still treats security as someone else's job."},
+
+// ---------- Code analysis ----------
+{t:"Code analysis", p:"What is the vulnerability in this login code?",
+ c:"query = \"SELECT * FROM users WHERE name = '\" + username + \"' AND pass = '\" + password + \"'\"\nresult = db.execute(query)",
+ o:["Cross-site scripting, because user input reaches the page",
+    "Path traversal, because the username can contain slashes",
+    "SQL injection, because user input is glued directly into the SQL command",
+    "Command injection, because db.execute runs a shell command"],
+ a:2, e:"The input becomes part of the SQL command itself. An attacker can type SQL instead of a name and change what the query does."},
+
+{t:"Code analysis", p:"In the same login code, an attacker types this as the username, with any password. Why does it log them in?",
+ c:"admin' --",
+ o:["The quote closes the name, and -- turns the rest of the query, including the password check, into a comment",
+    "The word admin is a special keyword that skips authentication",
+    "The database crashes and logs everyone in by default",
+    "The two dashes tell the database to subtract the password"],
+ a:0, e:"The query becomes SELECT * FROM users WHERE name = 'admin' -- ... Everything after -- is ignored, so the password is never checked."},
+
+{t:"Code analysis", p:"What is the best fix for the SQL injection above?",
+ o:["Remove all single quote characters from the input before building the query",
+    "Limit usernames to 20 characters",
+    "Hide database error messages from users",
+    "Use a parameterized query, so the database always treats the input as data, never as SQL"],
+ a:3, e:"Parameterized queries (prepared statements) separate the command from the data. Removing quotes is a blocklist: it breaks real names like O'Brien and there are other ways around it. Hiding errors only makes the attack harder to see, not impossible."},
+
+{t:"Code analysis", p:"A blog lets visitors post comments. One visitor posts a comment containing a script. From then on, the script runs in the browser of every person who opens that blog post. What is this?",
+ o:["Reflected XSS",
+    "Stored XSS",
+    "SQL injection",
+    "Cross-site request forgery (CSRF)"],
+ a:1, e:"The script is saved on the server (stored) and served to every visitor. Reflected XSS only bounces back to the one person who clicked a crafted link."},
+
+{t:"Code analysis", p:"A developer fixes XSS by blocking any input that contains the word \"script\". Why is this a weak fix?",
+ o:["Because it also blocks the word \"description\"",
+    "Because attackers can run JavaScript without a script tag, for example with an image tag's onerror attribute",
+    "Because browsers ignore filters written in the backend",
+    "It is not weak. This is the recommended fix"],
+ a:1, e:"Blocklists miss variations, like <img src=x onerror=...>, different capitalization, or encoding tricks. The real fix is output encoding: turn special characters like < and > into harmless text when showing user data on a page. (Blocking \"description\" is a real side effect, but not the main problem.)"},
+
+{t:"Code analysis", p:"You are logged in and open your invoice at /api/invoices/1043. You change the number to 1044 and see another customer's invoice. What is the real fix?",
+ o:["Switch invoice numbers to long random IDs so they cannot be guessed",
+    "Hide the invoice number from the address bar",
+    "On the server, check that the requested invoice belongs to the logged-in user before returning it",
+    "Require the user to log in again before viewing invoices"],
+ a:2, e:"This is IDOR, also called Broken Object Level Authorization (BOLA), the first item on the OWASP API Security Top 10. Random IDs make guessing harder, but if an ID leaks, the data is still exposed. Only an authorization check on every request fixes it."},
+
+{t:"Code analysis", p:"A download page uses this link. What happens if an attacker changes the file value as shown?",
+ c:"Normal:  /download?file=report.pdf\nAttack:  /download?file=../../../../etc/passwd",
+ o:["Path traversal: the ../ steps climb out of the download folder to read system files",
+    "Nothing, because .pdf is not at the end of the attack value",
+    "SQL injection: the slashes break the database query",
+    "Stored XSS: the file name gets saved and shown to other users"],
+ a:0, e:"Each ../ moves up one folder. If the server just glues the input onto a folder path, the attacker can read any file the app is allowed to read. Fix: only allow known file names, or resolve the full path and check it is still inside the download folder."},
+
+{t:"Code analysis", p:"A network tool page runs this code. What does the input below make the server do?",
+ c:"os.system(\"ping -c 1 \" + host)\n\nInput:  8.8.8.8; cat /etc/passwd",
+ o:["Ping 8.8.8.8 and nothing else, because ping ignores extra text",
+    "Return an error, since the input is not a valid IP address",
+    "Ping 8.8.8.8, then also run cat /etc/passwd, because the semicolon starts a second command",
+    "Ping the address 8.8.8.8;cat, which does not exist"],
+ a:2, e:"This is command injection. os.system passes the whole string to the shell, and the shell treats ; as \"now run the next command.\" Fix: do not use the shell, pass arguments as a list, and validate that the input really is an IP address."},
+
+{t:"Code analysis", p:"A shopping site checks with JavaScript in the browser that quantity is between 1 and 10 and that the price was not changed. An attacker sends the request with an intercepting proxy and sets price=0.01. What is the lesson?",
+ o:["The JavaScript check needs to be harder to read",
+    "Use HTTPS so the request cannot be changed",
+    "Move the check into a hidden form field",
+    "Never trust the client: validate everything again on the server, and take the price from the server's database"],
+ a:3, e:"Anything in the browser is under the attacker's control, including JavaScript and hidden fields. HTTPS protects data in transit from others, not from the user who is sending it. Client-side checks are for convenience; server-side checks are for security."},
+
+{t:"Code analysis", p:"When a page crashes, the app shows users a full error page with the stack trace, file paths, and the database version. Why is this a security problem?",
+ o:["It is not a problem, because the attacker still needs a password",
+    "It leaks information that helps an attacker plan a targeted attack",
+    "It slows the server down for other users",
+    "It counts as SQL injection"],
+ a:1, e:"This is information disclosure. Knowing the exact database version lets an attacker look up its CVEs; file paths help with path traversal. Show users a generic message and keep details in the server logs."},
+
+{t:"Code analysis", p:"During code review you find this. What is the main problem?",
+ c:"stored_hash = md5(password)\nsave_to_db(username, stored_hash)",
+ o:["MD5 is fast and unsalted, so leaked hashes can be cracked quickly; use a slow, salted password hash like bcrypt or Argon2",
+    "Passwords should be encrypted with AES instead, so they can be decrypted if a user forgets",
+    "MD5 output is too long to store in a database column",
+    "There is no problem, since the password is not stored in plain text"],
+ a:0, e:"Password hashing should be slow and salted so cracking is expensive. MD5 is built for speed, and without a salt, the same password always gives the same hash. Option B is tempting but wrong: passwords should never be reversible."},
+
+{t:"Code analysis", p:"While practicing at home, you notice that a real online store, not the class lab, seems to have the same IDOR bug we studied. What should you do?",
+ o:["Test a few more IDs to make sure, then report it",
+    "Post about it online so the company is pressured to fix it",
+    "Stop testing and report it through the company's security contact or vulnerability disclosure program, if it has one",
+    "Download some records as proof before reporting"],
+ a:2, e:"Testing systems you do not have permission to test can be illegal, even with good intentions (in the U.S., under the Computer Fraud and Abuse Act). Stop, do not access more data, and report responsibly. This is why our labs run only on our own VMs and practice apps."},
+];
+
+const L = "ABCD";
+let cur = 0;
+const picks = Array(Q.length).fill(null);
+const app = document.getElementById("app");
+
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+function stats(){
+  let g=0,b=0; picks.forEach((p,i)=>{ if(p===null) return; p===Q[i].a?g++:b++; });
+  document.getElementById("segG").style.width = (g/Q.length*100)+"%";
+  document.getElementById("segB").style.width = (b/Q.length*100)+"%";
+  document.getElementById("count").textContent = (g+b)+" of "+Q.length+" answered, "+g+" correct";
+  return {g,b};
+}
+
+function dots(){
+  return '<div class="dots" role="navigation" aria-label="Jump to question">' + Q.map((_,i)=>{
+    const p=picks[i]; let c="dot"; if(i===cur) c+=" cur"; if(p!==null) c+= p===Q[i].a?" g":" b";
+    return '<button class="'+c+'" data-go="'+i+'" aria-label="Question '+(i+1)+'">'+(i+1)+'</button>';
+  }).join("") + '</div>';
+}
+
+function render(){
+  const q=Q[cur], p=picks[cur], done = picks.every(x=>x!==null);
+  let h = '<section class="card" aria-live="polite">';
+  h += '<p class="qnum">Question '+(cur+1)+' of '+Q.length+'<span class="topic">'+q.t+'</span></p>';
+  h += '<p class="prompt">'+esc(q.p)+'</p>';
+  if(q.c) h += '<pre><code>'+esc(q.c)+'</code></pre>';
+  h += '<div class="opts">';
+  q.o.forEach((o,i)=>{
+    let c="opt";
+    if(p!==null){ if(i===q.a) c+=" right"; else if(i===p) c+=" wrong"; }
+    h += '<button class="'+c+'" data-opt="'+i+'"'+(p!==null?' disabled':'')+'><span class="letter">'+L[i]+'</span><span>'+esc(o)+'</span></button>';
+  });
+  h += '</div>';
+  if(p!==null){
+    const ok = p===q.a;
+    h += '<div class="feedback show '+(ok?'ok':'no')+'"><strong>'+(ok?'Correct.':'Not quite. The answer is '+L[q.a]+'.')+'</strong>'+esc(q.e)+'</div>';
+  }
+  h += '<div class="nav"><button class="btn" id="prev"'+(cur===0?' disabled':'')+'>Previous</button>';
+  if(cur<Q.length-1) h += '<button class="btn primary" id="next">Next question</button>';
+  else h += '<button class="btn primary" id="finish"'+(done?'':' disabled')+'>See my results</button>';
+  h += '</div>' + dots() + '</section>';
+  app.innerHTML = h;
+  stats();
+}
+
+function results(){
+  const {g} = stats();
+  const pct = Math.round(g/Q.length*100);
+  const missed = Q.map((q,i)=>({q,i})).filter(x=>picks[x.i]!==x.q.a);
+  let h = '<section class="card result"><h2>Your results</h2><p class="big">'+g+' / '+Q.length+'</p><p>'+pct+'% correct. ';
+  h += pct>=85 ? 'Strong work. You are ready for this material.' : pct>=65 ? 'Good base. Review the questions you missed below.' : 'Go back through the slides for the topics below, then try again.';
+  h += '</p>';
+  if(missed.length){
+    h += '<p><strong>Questions to review:</strong></p><ul class="missed">' + missed.map(x=>'<li><a href="#" data-go="'+x.i+'">Question '+(x.i+1)+'</a> ('+x.q.t+')</li>').join("") + '</ul>';
+  }
+  h += '<div class="nav"><button class="btn" id="back">Back to questions</button><button class="btn primary" id="reset">Start over</button></div></section>';
+  app.innerHTML = h;
+}
+
+app.addEventListener("click", e=>{
+  const t = e.target.closest("[data-opt],[data-go],#prev,#next,#finish,#reset,#back");
+  if(!t) return;
+  if(t.dataset.opt!==undefined){ picks[cur]=+t.dataset.opt; render(); return; }
+  if(t.dataset.go!==undefined){ e.preventDefault(); cur=+t.dataset.go; render(); return; }
+  if(t.id==="prev" && cur>0){ cur--; render(); }
+  if(t.id==="next"){ cur++; render(); }
+  if(t.id==="finish") results();
+  if(t.id==="back"){ render(); }
+  if(t.id==="reset"){ picks.fill(null); cur=0; render(); }
+});
+
+render();
+</script>
+</body>
+</html>
